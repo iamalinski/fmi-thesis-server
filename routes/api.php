@@ -5,7 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\ArticleController;
-use App\Http\Controllers\Api\SaleController;
+// use App\Http\Controllers\Api\SaleController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\DashboardController;
 
@@ -42,11 +42,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/articles/{id}', [ArticleController::class, 'destroy']);
 
     // Sales
-    Route::get('/sales', [SaleController::class, 'index']);
-    Route::post('/sales', [SaleController::class, 'store']);
-    Route::get('/sales/{id}', [SaleController::class, 'show']);
-    Route::put('/sales/{id}', [SaleController::class, 'update']);
-    Route::delete('/sales/{id}', [SaleController::class, 'destroy']);
+    // Route::get('/sales', [SaleController::class, 'index']);
+    // Route::post('/sales', [SaleController::class, 'store']);
+    // Route::get('/sales/{id}', [SaleController::class, 'show']);
+    // Route::put('/sales/{id}', [SaleController::class, 'update']);
+    // Route::delete('/sales/{id}', [SaleController::class, 'destroy']);
 
     // Invoices
     Route::get('/invoices', [InvoiceController::class, 'index']);
