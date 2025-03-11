@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\DashboardController;
 
 // Public routes
 Route::post('/register', [AuthController::class, 'register']);
+Route::post('/register-check-user-data', [AuthController::class, 'registerCheckUserData']);
 Route::post('/login', [AuthController::class, 'login']);
 
 // Protected routes
