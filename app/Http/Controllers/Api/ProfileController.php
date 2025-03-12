@@ -22,10 +22,9 @@ class ProfileController extends Controller
                 'email',
                 Rule::unique('users')->ignore($user->id),
             ],
-            'phone' => 'nullable|string|max:20',
         ]);
 
-        $user->update($request->only('first_name', 'last_name', 'email', 'phone'));
+        $user->update($request->only('first_name', 'last_name', 'email'));
 
         return response()->json([
             'message' => 'Personal information updated successfully',
