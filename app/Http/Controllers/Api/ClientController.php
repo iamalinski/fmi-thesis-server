@@ -16,7 +16,7 @@ class ClientController extends Controller
                     ->orWhere('number', 'like', '%' . $request->search . '%')
                     ->orWhere('vat_number', 'like', '%' . $request->search . '%');
             })
-            ->orderBy('name')
+            ->orderBy('created_at', 'desc')
             ->paginate($request->per_page ?? 10);
 
         return response()->json($clients);
@@ -26,10 +26,10 @@ class ClientController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'number' => 'nullable|string|max:20',
+            'number' => 'required|string|max:20',
             'vat_number' => 'nullable|string|max:20',
-            'acc_person' => 'nullable|string|max:255',
-            'address' => 'nullable|string|max:255',
+            'acc_person' => 'required|string|max:255',
+            'address' => 'required|string|max:255',
         ]);
 
         $client = $request->user()->clients()->create($request->all());
@@ -37,7 +37,7 @@ class ClientController extends Controller
         return response()->json([
             'message' => 'Client created successfully',
             'client' => $client
-        ], 201);
+        ], 200);
     }
 
     public function show(Request $request, $id)
