@@ -53,10 +53,10 @@ class ClientController extends Controller
 
         $request->validate([
             'name' => 'required|string|max:255',
-            'number' => 'nullable|string|max:20',
+            'number' => 'required|string|max:20',
             'vat_number' => 'nullable|string|max:20',
-            'acc_person' => 'nullable|string|max:255',
-            'address' => 'nullable|string|max:255',
+            'acc_person' => 'required|string|max:255',
+            'address' => 'required|string|max:255',
         ]);
 
         $client->update($request->all());
