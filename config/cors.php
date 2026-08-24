@@ -6,7 +6,7 @@ return [
     'allowed_origins' => ['http://localhost:5173'], // Replace with your frontend URLs
     'allowed_origins_patterns' => [], // Regex patterns for allowed origins
     'allowed_headers' => ['*'], // Allowed headers
-    'exposed_headers' => [], // Headers exposed to the client
+    'exposed_headers' => ['Content-Disposition'], // Headers exposed to the client
     'max_age' => 0, // Max age for preflight requests
     'supports_credentials' => true, // Changed to true to allow credentials
 ];

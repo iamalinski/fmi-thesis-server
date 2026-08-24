@@ -14,6 +14,11 @@ class Invoice extends Model
         'date',
         'due_date',
         'amount',
+        'subtotal',
+        'vat',
+        'payment_method',
+        'deal_location',
+        'author',
         'status',
         'notes',
     ];
@@ -21,6 +26,9 @@ class Invoice extends Model
     protected $casts = [
         'date' => 'date',
         'due_date' => 'date',
+        'amount' => 'decimal:2',
+        'subtotal' => 'decimal:2',
+        'vat' => 'decimal:2',
     ];
 
     public function user()
@@ -36,5 +44,10 @@ class Invoice extends Model
     public function sale()
     {
         return $this->belongsTo(Sale::class);
+    }
+
+    public function items()
+    {
+        return $this->hasMany(InvoiceItem::class);
     }
 }

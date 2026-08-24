@@ -25,8 +25,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/profile/company', [ProfileController::class, 'updateCompanyInfo']);
     Route::put('/profile/password', [ProfileController::class, 'changePassword']);
 
-    // Dashboard
-    Route::get('/dashboard', [DashboardController::class, 'index']);
+    // Dashboard (one endpoint per statistic)
+    Route::get('/dashboard/total-revenue', [DashboardController::class, 'totalRevenue']);
+    Route::get('/dashboard/invoices-count', [DashboardController::class, 'invoicesCount']);
+    Route::get('/dashboard/active-articles', [DashboardController::class, 'activeArticles']);
+    Route::get('/dashboard/top-clients', [DashboardController::class, 'topClients']);
+    Route::get('/dashboard/recent-invoices', [DashboardController::class, 'recentInvoices']);
+    Route::get('/dashboard/top-products', [DashboardController::class, 'topProducts']);
 
     // Clients
     Route::get('/clients', [ClientController::class, 'index']);
@@ -52,6 +57,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Invoices
     Route::get('/invoices', [InvoiceController::class, 'index']);
     Route::post('/invoices', [InvoiceController::class, 'store']);
+    Route::get('/invoices/{id}/download', [InvoiceController::class, 'download']);
+    Route::patch('/invoices/{id}/status', [InvoiceController::class, 'updateStatus']);
     Route::get('/invoices/{id}', [InvoiceController::class, 'show']);
     Route::put('/invoices/{id}', [InvoiceController::class, 'update']);
     Route::delete('/invoices/{id}', [InvoiceController::class, 'destroy']);
