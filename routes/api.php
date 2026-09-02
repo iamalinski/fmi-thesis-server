@@ -58,7 +58,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/invoices', [InvoiceController::class, 'index']);
     Route::post('/invoices', [InvoiceController::class, 'store']);
     Route::get('/invoices/{id}/download', [InvoiceController::class, 'download']);
+    Route::post('/invoices/{id}/send', [InvoiceController::class, 'send']);
     Route::patch('/invoices/{id}/status', [InvoiceController::class, 'updateStatus']);
+    Route::patch('/invoices/{id}/recurrence', [InvoiceController::class, 'updateRecurrence']);
+    Route::delete('/invoices/{id}/recurrence', [InvoiceController::class, 'destroyRecurrence']);
     Route::get('/invoices/{id}', [InvoiceController::class, 'show']);
     Route::put('/invoices/{id}', [InvoiceController::class, 'update']);
     Route::delete('/invoices/{id}', [InvoiceController::class, 'destroy']);

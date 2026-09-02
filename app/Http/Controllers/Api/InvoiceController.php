@@ -3,10 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\InvoiceMail;
 use App\Models\Invoice;
 use App\Services\InvoicePdfService;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 
 class InvoiceController extends Controller
@@ -30,6 +34,10 @@ class InvoiceController extends Controller
                     $q->where('name', 'like', '%' . $request->client . '%');
                 });
             })
+            // `recurring=1` narrows the list down to the repeating invoices
+            ->when($request->filled('recurring'), function ($query) use ($request) {
+                return $query->where('is_recurring', $request->boolean('recurring'));
+            })
             ->orderBy('date', 'desc')
             ->paginate($request->per_page ?? 10);
 
@@ -44,9 +52,9 @@ class InvoiceController extends Controller
             $clientId = $this->resolveClientId($request, $data);
             $totals = $this->calculateTotals($data['items']);
 
-            $invoice = $request->user()->invoices()->create([
+            $invoice = $request->user()->invoices()->create(array_merge([
                 'client_id' => $clientId,
-                'invoice_number' => $this->generateInvoiceNumber(),
+                'invoice_number' => Invoice::nextInvoiceNumber(),
                 'date' => $data['date'],
                 'due_date' => $data['due_date'],
                 'subtotal' => $totals['subtotal'],
@@ -57,14 +65,13 @@ class InvoiceController extends Controller
                 'author' => $data['author'] ?? null,
                 'status' => $data['status'] ?? 'unpaid',
                 'notes' => $data['notes'] ?? null,
-            ]);
+            ], $this->recurrenceAttributes($request, $data)));
 
             $this->syncItems($invoice, $data['items']);
 
             return $invoice;
         });
 
-        // Generate the printable PDF document for the freshly created invoice
         $this->pdfService->generateAndStore($invoice);
 
         return response()->json([
@@ -92,7 +99,7 @@ class InvoiceController extends Controller
             $clientId = $this->resolveClientId($request, $data);
             $totals = $this->calculateTotals($data['items']);
 
-            $invoice->update([
+            $invoice->update(array_merge([
                 'client_id' => $clientId,
                 'date' => $data['date'],
                 'due_date' => $data['due_date'],
@@ -104,7 +111,7 @@ class InvoiceController extends Controller
                 'author' => $data['author'] ?? null,
                 'status' => $data['status'] ?? $invoice->status,
                 'notes' => $data['notes'] ?? null,
-            ]);
+            ], $this->recurrenceAttributes($request, $data, $invoice)));
 
             // Replace line items with the submitted set
             $invoice->items()->delete();
@@ -152,6 +159,45 @@ class InvoiceController extends Controller
     }
 
     /**
+     * Turn repetition on, or change its schedule, without touching the rest
+     * of the invoice.
+     */
+    public function updateRecurrence(Request $request, $id)
+    {
+        $invoice = $request->user()->invoices()->findOrFail($id);
+
+        $data = $request->validate($this->recurrenceRules($request, true));
+
+        $invoice->update($this->recurrenceAttributes($request, $data, $invoice));
+
+        return response()->json([
+            'message' => 'Invoice recurrence updated successfully',
+            'invoice' => $invoice->fresh()->load('client'),
+        ]);
+    }
+
+    /**
+     * Stop an invoice from repeating. Copies already generated are kept.
+     */
+    public function destroyRecurrence(Request $request, $id)
+    {
+        $invoice = $request->user()->invoices()->findOrFail($id);
+
+        $invoice->update([
+            'is_recurring' => false,
+            'recurrence_type' => null,
+            'recurrence_day_of_week' => null,
+            'recurrence_day_of_month' => null,
+            'recurrence_next_run_at' => null,
+        ]);
+
+        return response()->json([
+            'message' => 'Invoice recurrence cancelled successfully',
+            'invoice' => $invoice->fresh()->load('client'),
+        ]);
+    }
+
+    /**
      * Stream the generated PDF for download.
      */
     public function download(Request $request, $id)
@@ -167,12 +213,43 @@ class InvoiceController extends Controller
     }
 
     /**
+     * Email the invoice, with its PDF attached, to the address entered by the
+     * user. The message is sent through the configured mailer (Mailgun).
+     */
+    public function send(Request $request, $id)
+    {
+        $invoice = $request->user()->invoices()
+            ->with('client', 'items', 'user.company')
+            ->findOrFail($id);
+
+        $data = $request->validate([
+            'email' => 'required|email|max:255',
+            'note' => 'nullable|string|max:1000',
+        ]);
+
+        try {
+            Mail::to($data['email'])->send(new InvoiceMail($invoice, $data['note'] ?? null));
+        } catch (\Throwable $e) {
+            Log::error('Sending invoice ' . $invoice->invoice_number . ' to ' . $data['email'] . ' failed: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'The invoice could not be sent. Please try again later.',
+            ], 502);
+        }
+
+        return response()->json([
+            'message' => 'Invoice sent successfully',
+            'email' => $data['email'],
+        ]);
+    }
+
+    /**
      * Validate the invoice payload. A buyer is provided either as an existing
      * client_id, or as an inline `client` object that will be created.
      */
     private function validateInvoice(Request $request): array
     {
-        return $request->validate([
+        return $request->validate(array_merge([
             'client_id' => 'nullable|exists:clients,id',
             'client' => 'required_without:client_id|array',
             'client.name' => 'required_without:client_id|string|max:255',
@@ -195,7 +272,90 @@ class InvoiceController extends Controller
             'items.*.quantity' => 'required|numeric|min:0.01',
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.discount' => 'nullable|numeric|min:0|max:100',
-        ]);
+        ], $this->recurrenceRules($request)));
+    }
+
+    /**
+     * Rules for the repeat settings. A weekly repeat requires the weekday, a
+     * monthly one the day of the month; both are ignored when the invoice
+     * does not repeat. $required makes `is_recurring` itself mandatory, as on
+     * the dedicated recurrence endpoint.
+     */
+    private function recurrenceRules(Request $request, bool $required = false): array
+    {
+        $repeats = fn () => $request->boolean('is_recurring');
+
+        $repeatsWith = fn (string $type) => fn () => $request->boolean('is_recurring')
+            && $request->input('recurrence_type') === $type;
+
+        return [
+            'is_recurring' => [$required ? 'required' : 'nullable', 'boolean'],
+            'recurrence_type' => [
+                Rule::requiredIf($repeats),
+                'nullable',
+                Rule::in([Invoice::RECURRENCE_WEEKLY, Invoice::RECURRENCE_MONTHLY]),
+            ],
+            // 1 = Monday ... 7 = Sunday
+            'recurrence_day_of_week' => [
+                Rule::requiredIf($repeatsWith(Invoice::RECURRENCE_WEEKLY)),
+                'nullable', 'integer', 'min:1', 'max:7',
+            ],
+            // 1..31, clamped to the last day of shorter months
+            'recurrence_day_of_month' => [
+                Rule::requiredIf($repeatsWith(Invoice::RECURRENCE_MONTHLY)),
+                'nullable', 'integer', 'min:1', 'max:31',
+            ],
+        ];
+    }
+
+    /**
+     * Translate the validated repeat settings into invoice columns, including
+     * the date the scheduler should next fire on.
+     */
+    private function recurrenceAttributes(Request $request, array $data, ?Invoice $existing = null): array
+    {
+        if (! $request->boolean('is_recurring')) {
+            return [
+                'is_recurring' => false,
+                'recurrence_type' => null,
+                'recurrence_day_of_week' => null,
+                'recurrence_day_of_month' => null,
+                'recurrence_next_run_at' => null,
+            ];
+        }
+
+        $weekly = $data['recurrence_type'] === Invoice::RECURRENCE_WEEKLY;
+
+        $attributes = [
+            'is_recurring' => true,
+            'recurrence_type' => $data['recurrence_type'],
+            'recurrence_day_of_week' => $weekly ? (int) $data['recurrence_day_of_week'] : null,
+            'recurrence_day_of_month' => $weekly ? null : (int) $data['recurrence_day_of_month'],
+        ];
+
+        $attributes['recurrence_next_run_at'] = $this->resolveNextRunAt($attributes, $existing);
+
+        return $attributes;
+    }
+
+    /**
+     * An unchanged schedule keeps its pending run date, so merely editing an
+     * invoice never postpones the copy that is already queued up.
+     */
+    private function resolveNextRunAt(array $attributes, ?Invoice $existing)
+    {
+        $scheduleUnchanged = $existing
+            && $existing->is_recurring
+            && $existing->recurrence_type === $attributes['recurrence_type']
+            && $existing->recurrence_day_of_week === $attributes['recurrence_day_of_week']
+            && $existing->recurrence_day_of_month === $attributes['recurrence_day_of_month'];
+
+        if ($scheduleUnchanged && $existing->recurrence_next_run_at) {
+            return $existing->recurrence_next_run_at;
+        }
+
+        // A throwaway model carrying the new settings computes the first run
+        return (new Invoice($attributes))->nextRecurrenceDate(CarbonImmutable::now());
     }
 
     /**
@@ -260,19 +420,5 @@ class InvoiceController extends Controller
                 'total' => round($this->lineTotal($item), 2),
             ]);
         }
-    }
-
-    /**
-     * Build the next sequential 10-digit, zero-padded invoice number
-     * (e.g. 0000000101). The sequence is derived from the highest existing
-     * numeric invoice number, so legacy non-numeric numbers are ignored.
-     */
-    private function generateInvoiceNumber(): string
-    {
-        $max = (int) Invoice::query()
-            ->selectRaw('MAX(CAST(invoice_number AS UNSIGNED)) as max_num')
-            ->value('max_num');
-
-        return str_pad($max + 1, 10, '0', STR_PAD_LEFT);
     }
 }

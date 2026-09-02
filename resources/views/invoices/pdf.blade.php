@@ -271,9 +271,9 @@
                     <td class="text-center">{{ $index + 1 }}</td>
                     <td>{{ $item->description }}</td>
                     <td class="text-right">{{ rtrim(rtrim(number_format($item->quantity, 2, '.', ' '), '0'), '.') }}</td>
-                    <td class="text-right">{{ number_format($item->unit_price, 2, '.', ' ') }}</td>
+                    <td class="text-right">{{ number_format($item->unit_price, 2, '.', ' ') }} EUR</td>
                     <td class="text-right">{{ number_format($item->discount, 0) }}%</td>
-                    <td class="text-right">{{ number_format($item->total, 2, '.', ' ') }}</td>
+                    <td class="text-right">{{ number_format($item->total, 2, '.', ' ') }} EUR</td>
                 </tr>
             @endforeach
         </tbody>
